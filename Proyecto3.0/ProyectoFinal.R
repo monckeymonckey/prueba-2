@@ -1,0 +1,537 @@
+# Informática en Ecología
+# Profesores: Aline Pingarroni Martín del Campo y Daniel Martín Auliz Ortiz
+# Equipo 1: Andrea Hermenegildo González y David Fidel Rojas Aguilar
+# Análisis multivariado de los patrones de contaminación atmosférica en las 32 entidades federativas de la República Mexicana y la determinación de la emisión de contaminantes atmosféricos por tipo de fuente
+# Base de datos 1: "Inventario de emisiones de contaminantes atmosféricos por municipio y fuente, 2018"
+# Fuente: Plataforma Nacional de Datos Abiertos. (SEMARNAT, 2018). <https://datos.gob.mx/dataset/calidad_aire_emisiones_contaminantes/resource/70dfeb69-065b-4ed4-8922-505602666250>
+# Base de datos 2: "Población total, indicadores socioeconómicos, índice y grado de marginación por municipio"
+# Fuente: Plataforma Nacional de Datos Abiertos. (INEGI). <https://datos.gob.mx/dataset/indices_marginacion/resource/d217f9aa-70e5-4176-b00b-3a92b7541a1e>
+# ¿Qué tipos de fuentes contribuyeron más a la emisión de cada tipo de contaminate? y ¿Cómo se agrupan los estados de México según su perfil de emisiones de distintos contaminantes, y qué contaminantes explican esas diferencias?
+
+#####Librerías#####
+#install.packages("tidyverse")
+library(tidyverse) #procesamiento de datos
+#install.packages("readxl")
+library(readxl)
+#install.packages("ggplot2")
+library(ggplot2)
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("ggridges")
+library(ggridges)
+#install.packages("tidyr")
+library(tidyr)
+#install.packages("writexl")
+library(writexl)
+#install.packages("rgbif")
+library(rgbif) #descargar datos de ocurrencias
+#install.packages("sf")
+library(sf) #manipulaci?n  de datos vectoriales
+#install.packages("rworldxtra")
+library(rworldxtra) #datos vectoriales de los paises del mundo
+#install.packages("geodata")
+library(geodata) #datos geoespaciales complemenatarios
+#install.packages("ggspatial")
+library(ggspatial)#auxiliar para visualizar datos espaciales
+#install.packages("terra")
+library(terra) #datos raster
+#install.packages("tidyterra")
+library(tidyterra) #maniipulaci?n de raster
+#install.packages("paletteer")
+library(paletteer) #colores
+#install.packages("ggcorrplot")
+library(ggcorrplot) #diagrama de correlaciones
+#install.packages("plotly")
+library(plotly) #gr?ficos avanzados
+#install.packages("patchwork")
+library(patchwork) #organizar gr?ficos
+#install.packages("magick")
+library(magick) #para manejo de imagenes
+#install.packages("grid")
+library(grid)
+#install.packages("factoextra")
+library(factoextra)
+#install.packages("ggfortify")
+library(ggfortify)
+#####Carga y modificación de las bases de datos#####
+
+######Población######
+pt <- read_excel("IMM_2020.xlsx", sheet = 2)
+#Guarda en pt la 2° hoja de la base original pues esta contiene las mediciones.
+
+view(pt)
+#Toda la información del último censo en 2020
+
+pob <- pt %>%
+  group_by(NOM_ENT) %>% #agrupa por estados
+  summarize(Poblacion_total = sum(POB_TOT, na.rm = TRUE)
+   #suma las poblaciones de cada municipio, guardandolo el Poblacion_total, y esto lo tendrá en una fila por estado         
+            )
+head(pob)
+#pob es la tabla de estados de México y la poblacipon regsitrada en el año 2020
+
+######Área de estados######
+mexshp <- st_read("entidades_mex.shp")
+#Guardamos el archivo de las entidades de tipo shp
+
+estados <- as.data.frame(mexshp)
+#Guardamos en un estados como dataframe
+
+#####Combinación población y geografía de cada estado######
+#Qué nombres maneja estados y pob
+unique(estados$NOMGEO)
+
+unique(pob$NOM_ENT)
+#Estado, Michoacán y Veracruz no coinciden
+
+#Modificamos los nombres de pob para que coincidan en la unión
+pob <- pob %>%
+  #Dentro de pob...
+  mutate( #...modifica las colmunas.
+    NOM_ENT = case_when( #En específico a esta <<En caso de...>>
+      NOM_ENT== "México" ~ "Estado de México",
+      NOM_ENT == "Michoacán de Ocampo" ~ "Michoacán",
+      NOM_ENT == "Veracruz de Ignacio de la Llave" ~ "Veracruz",
+      TRUE ~ NOM_ENT
+    ))
+
+#union
+union0 <- left_join(estados,pob, by = c ("NOMGEO" = "NOM_ENT"))
+
+view(union0)
+#union0 tiene tanto la información geográfica de cada estado como su población
+
+######Tabla demográfica######
+#demo tendrá sólo los estados, su área y poblacipon total
+demo <- union0 %>%
+  select(NOMGEO,area_ha,Poblacion_total)
+
+#Se crea una nuevacolumna de km2
+demo <- demo %>%
+  mutate(km2 = area_ha/100)
+
+#para poder tener la densidad: población/km2 de cada estado.
+demo <- demo %>%
+  mutate(densidad = Poblacion_total/km2)
+
+#qué variables hay en demo
+names(demo)
+
+######Mapa######
+#Verificamos los nombres de los estados en ambas bases
+unique(mexshp$NOMGEO)
+
+unique(demo$NOMGEO)
+#Todos coinciden
+
+#Combina las tablas geográfica y demográfica
+mexdens <- mexshp %>%
+  left_join(demo, by = "NOMGEO")
+
+#Grafica el mapa
+ggplot(mexdens) +
+  geom_sf(aes(fill = densidad), color = "black", size = 0.2) +
+  scale_fill_viridis_c(option = "magma",
+                       name = "Densidad (hab/km²)") +
+  theme_minimal() +
+  labs(title = "Densidad poblacional por estado (INEGI 2020)",
+       caption = "Fuente: Censo de Población y Vivienda 2020") +
+  theme(plot.title = element_text(face = "bold", size = 14),
+        legend.position = "right")
+ggplot(mexdens) +
+  geom_sf(aes(fill = densidad), color = "black", size = 0.2) +
+  scale_fill_viridis_c(
+    option = "magma",
+    trans = "log",                 # 🔹 transformación logarítmica
+    name = "Densidad (hab/km²)",
+    breaks = c(11, 50, 200, 700, 6197), # 🔹 puedes ajustar según tus datos
+    labels = c("11", "50","200", "700", "6197")
+  ) +
+  theme_minimal() +
+  labs(title = "Densidad poblacional por estado (INEGI 2020)",
+       caption = "Fuente: Censo de Población y Vivienda 2020") +
+  theme(plot.title = element_text(face = "bold", size = 14),
+        legend.position = "right")
+
+#####Contaminación######
+
+######Contaminantes por estado######
+#Se guarda en cm la información que existe en la tabla de mediciones promedio del año de contaminantes por municipio tomado en el año 2018
+cm <- read_csv("contaminantes.csv")
+
+#co es la tabla de los estados de México y la cantidad promedio de 7 contaminantes en el año 2018
+co <- cm %>%
+  #Dentro de cm...
+  group_by(Entidad_federativa) %>%
+  #Agrupa por entidades y...
+  summarize(across(3:9, ~ mean(.x, na.rm = TRUE)
+  #De las columnas de contaminantes (3:9), crea el promedio de todas las cantidades registras, creando una solo fila para cada estado
+  ))
+
+#Vemos las variables y tipos de datos de co, las emisiones promedio de cada contaminante por estado
+head(co)
+
+######Contaminantes por tipo de fuente por estado######
+#cpf tiene el promedio de 7 contaminantes por por tipo de fuente de cada estado de Méxic
+cpf <- cm %>%
+  #Dentro de cm...
+  group_by(Entidad_federativa, Tipo_de_Fuente) %>%
+  #... agrupa por Entidad_federativa y Tipo de Fuente, luego...
+  summarise(across(2:8, ~ mean(.x, na.rm = TRUE)))
+#De las columnas 2:8 (contaminantes) saca su promedio y colocalos en filas separadas
+
+view(cpf)
+#cpf tiene el promedio de 7 contaminantes por por tipo de fuente de cada estado de México
+
+######Mapas######
+#Verificamos que ambas bases manejen los mismos nombres por entidad
+unique(co$Entidad_federativa)
+unique(mexshp$NOMGEO)
+#Coahuila y Edomex no coinciden
+
+#Modificamos
+mexshp <- mexshp %>%
+  #Dentro de pob...
+  mutate( #...modifica las colmunas.
+    NOMGEO = case_when( #En específico a esta <<En caso de...>>
+      NOMGEO == "Estado de México" ~ "México",
+      NOMGEO  == "Coahuila de Zaragoza" ~ "Coahuila",
+      TRUE ~ NOMGEO
+    ))
+
+#Creamos una nueva tabla que comnbina los datos de emisiones con la geografía
+mexco <- mexshp %>%
+  left_join(co, by = c("NOMGEO" ="Entidad_federativa"))
+
+names(mexco)
+ggplot(mexco) +
+  geom_sf(aes(fill = SO_2 ), color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "plasma", name = "Emisión (ton/año)") +
+  theme_minimal() +
+  labs(title = "Emisiones de CO por estado",
+       caption = "Inventario Nacional de Emisiones") +
+  theme(plot.title = element_text(face = "bold", size = 14))
+
+#####Análisis#####
+
+######Cambio de nombre de estados######
+
+unique(demo$NOMGEO)
+unique(co$Entidad_federativa)
+unique(cpf$Entidad_federativa)
+#Se verifica los nombres de los estados que maneja cada base
+
+demo <- demo %>%
+  #Dentro de pob...
+  mutate( #...modifica las colmunas.
+    NOMGEO = case_when( #En específico a esta <<En caso de...>>
+      NOMGEO == "Estado de México" ~ "México",
+      NOMGEO  == "Coahuila de Zaragoza" ~ "Coahuila",
+      TRUE ~ NOMGEO
+    ))
+
+#Se verifica si han sido cambiadas
+unique(demo$NOMGEO)
+
+######Uniones de tablas######
+
+#union1 es la tabla que contiene a las entidades federativaS, el promedio de emisiones por contaminante más la poblacipon y densidad por estado.
+union1 <- left_join(co,demo, by = c ("Entidad_federativa" = "NOMGEO"))
+
+View(union1)
+
+#union2 tiene la cantidad promedio de 7 contaminantes por su tipo de fuente de cada entidad federativa, más la población y densidad  de cada estado.
+union2 <- left_join(cpf,demo, by = c ("Entidad_federativa" = "NOMGEO"))
+
+View(union2)
+
+######Correlación entre densiad y contaminante#######
+
+#######Modificación de la tabla para realizar los análisis######
+dim(union2)
+#Tabla original con 160 observaciones y 10 variables
+
+names(union2)
+#Se revisa el nombre y posición de los contaminantes
+
+bd_prueba <- union2 %>%
+  #Dentro de union2...
+  pivot_longer(
+    #...cambiamos a formato largo (columnas a filas)
+    cols = c(3:9),
+    #Se determina de qué columnas de creará una sola.
+    names_to = "Contaminante",
+    #Se le nombra
+    values_to = "Emision"
+    #Los valores que tenían se conviertne en otra con otro nombre
+  )
+
+View(bd_prueba)
+#Cambiamos a formato largo, ahora una columna de Contaminante tendrá enlistado los 7 tipos que coincidirá con el tipo de fuente y emisión reportada, más la población.
+
+dim(bd_prueba)
+#Nueva tabla con 1120 filas y solo 8 variables
+
+######Correlación entre densidad y tipo de contaminante######
+cord <- bd_prueba %>%
+  #Dentro de bd_prueba...
+  group_by(Contaminante) %>%
+  #...agrupa por contaminante y luego...
+  summarise( #...crea una fila con...
+    cor_densidad_emision = cor(densidad, Emision, use = "complete.obs")
+    #...la correlación entre la población y la emisipon de cada contaminante.
+  )
+
+cord
+#Correlación entre los contaminantes y la densidad. Relaciones positivas o negativas indican que si entre más grande o más pequeña la densidad (cerca de 1 o -1) mayor o menor será la emisión de cada contaminante
+
+#Gráficamente
+ggplot(bd_prueba, aes(x = densidad, y = Emision, color = Tipo_de_Fuente)) +
+  geom_point() +
+  facet_wrap(~ Contaminante, scales = "free_y") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  theme_minimal() +
+  labs(title = "Relación entre población y emisiones por contaminante",
+       x = "Población total del estado",
+       y = "Emisión reportada")
+
+#####Relación entre contaminante y tipo de fuente#####
+######SO_2######
+SO_2 <- subset(bd_prueba, Contaminante == "SO_2")
+#Filtro de los datos con el contaminante seleccionado
+
+anova_SO_2 <- aov(Emision ~ Tipo_de_Fuente, data = SO_2)
+#Anova que compara entre tipos de fuente las emisiones registradas
+
+summary(anova_SO_2)
+#Resultado del Anova
+
+tukey_SO_2 <- TukeyHSD(anova_SO_2)
+#Entre qué tipos de fuente hay mayor o menor diferencia,
+
+tukey_SO_2
+#p aj muestra el valor p ajustado, qué comparaciones son significativas 
+#(<0.05), con esto se pueden ver qué tipo o tipos de fuente tienen más relación con la cantidad qu eemite el contaminante. Si una o dos tipos se repiten en comparaciones con p adj <0.05, esas serán las que posean mayor relación con la emisión de la particula.
+
+#Gráficamente
+ggplot(SO_2, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) +
+  labs(title = "Emisiones de SO2 por tipo de fuente",
+       y = "Emisión",
+       x = "Tipo de fuente")
+#Gráfica de cajas y bigotes que compara las emisiones por tipo de fuente
+
+######CO######
+CO <- subset(bd_prueba, Contaminante == "CO")
+anova_CO <- aov(Emision ~ Tipo_de_Fuente, data = CO)
+summary(anova_CO)
+tukey_CO <- TukeyHSD(anova_CO)
+tukey_CO
+#Gráficamente#
+ggplot(CO, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) +
+  labs(title = "Emisiones de CO por tipo de fuente",
+       y = "Emisión",
+       x = "Tipo de fuente")
+
+######NOx######
+NOx <- subset(bd_prueba, Contaminante == "NOx")
+anova_NOx <- aov(Emision ~ Tipo_de_Fuente, data = NOx)
+summary(anova_NOx)
+tukey_NOx <- TukeyHSD(anova_NOx)
+tukey_NOx
+#Gráficamente#
+ggplot(NOx, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot() +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) +
+  labs(title = "Emisiones de NOx por tipo de fuente",
+       y = "Emisión",
+       x = "Tipo de fuente")
+
+######COV######
+COV <- subset(bd_prueba, Contaminante == "COV")
+anova_COV <- aov(Emision ~ Tipo_de_Fuente, data = COV)
+summary(anova_COV)
+tukey_COV <- TukeyHSD(anova_COV)
+tukey_COV
+#Gráficamente#
+ggplot(COV, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot() +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) +
+  labs(title = "Emisiones de COV por tipo de fuente",
+       y = "Emisión",
+       x = "Tipo de fuente")
+
+######PM_010######
+PM_010 <- subset(bd_prueba, Contaminante == "PM_010")
+anova_PM_010 <- aov(Emision ~ Tipo_de_Fuente, data = PM_010)
+summary(anova_PM_010)
+tukey_PM_010 <- TukeyHSD(anova_PM_010)
+tukey_PM_010
+#Gráficamente#
+ggplot(PM_010, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot() +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) +
+  labs(title = "Emisiones de PM10 por tipo de fuente",
+       y = "Emisión",
+       x = "Tipo de fuente")
+
+######PM_2_5######
+PM_2_5 <- subset(bd_prueba, Contaminante == "PM_2_5")
+anova_PM_2_5 <- aov(Emision ~ Tipo_de_Fuente, data = PM_2_5)
+summary(anova_PM_2_5)
+tukey_PM_2_5 <- TukeyHSD(anova_PM_2_5)
+tukey_PM_2_5
+#Gráficamente#
+ggplot(PM_2_5, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot() +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) +
+  labs(title = "Emisiones de PM2.5 por tipo de fuente",
+       y = "Emisión",
+       x = "Tipo de fuente")
+
+######NH_3######
+NH_3 <- subset(bd_prueba, Contaminante == "NH_3")
+anova_NH_3 <- aov(Emision ~ Tipo_de_Fuente, data = NH_3)
+summary(anova_NH_3)
+tukey_NH_3 <- TukeyHSD(anova_NH_3)
+tukey_NH_3
+#Gráficamente#
+ggplot(NH_3, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot() +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) +
+  labs(title = "Emisiones de NH_3 por tipo de fuente",
+       y = "Emisión",
+       x = "Tipo de fuente")
+
+######Gráfica general######
+ggplot(bd_prueba, aes(x = Tipo_de_Fuente, y = Emision, fill = Tipo_de_Fuente)) +
+  geom_boxplot() +
+  facet_wrap(~Contaminante, scales = "free_y") +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "Fuentes de área" = "FA",
+    "Fuentes fijas" = "FF",
+    "Fuentes móviles carreteros" = "FMC",
+    "Fuentes móviles que no circulan por carretera" = "FMNC",
+    "Fuentes naturales" = "FN")) 
+
+######PCA##########
+library(factoextra)
+
+row.names(co) <- co$Entidad_federativa
+dn <- co[,-1]
+pca <- prcomp(dn,scale. = TRUE)
+summary(pca)
+fviz_eig(pca, addlabels = TRUE)
+fviz_pca_ind(pca,
+             geom.ind = "point",
+             col.ind = "cos2",
+             repel = TRUE)
+fviz_pca_biplot(pca, repel = TRUE,
+                col.var = "red",
+                col.ind = "blue")
+
+#####Relación Estados y Contaminante (PCA)####
+
+#Creamos una nueva columna (region) asignando a los estados correspondientes
+co$region <- case_when(
+  co$Entidad_federativa %in% c("Baja California", "Sonora", "Chihuahua", "Durango", "Sinaloa", "Baja California Sur") ~ "Noroeste",
+  co$Entidad_federativa %in% c("Coahuila", "Nuevo León", "Tamaulipas") ~ "Noreste",
+  co$Entidad_federativa %in% c("Nayarit", "Jalisco", "Colima", "Michoacán") ~ "Occidente",
+  co$Entidad_federativa %in% c("Zacatecas", "Aguascalientes", "San Luis Potosí", "Guanajuato") ~ "Bajío",
+  co$Entidad_federativa %in% c("Querétaro", "Hidalgo", "Tlaxcala", "Puebla", "Ciudad de México","México", "Morelos") ~ "Centro",
+  co$Entidad_federativa %in% c("Guerrero", "Oaxaca", "Chiapas") ~ "Sur",
+  co$Entidad_federativa %in% c("Tabasco", "Campeche", "Yucatán","Quintana Roo","Veracruz") ~ "Sureste",
+  TRUE ~ "Otra"
+)
+#Para el PCA, vamos a usar los datos de las las columnas 2 - 8, que corresponden a los contamiantes
+pca_data <- co %>% select(2:8)
+
+#Se guarda el PCA, asegurando que todos tengan una escala cercana para no estar afectados por la variación
+pca_result <- prcomp(pca_data, scale. = TRUE)
+
+#Podemos ver la Desviacipon estandar y las proporciones que explican cada Componentes, así com ola acumulativa
+summary(pca_result)
+#Los dos primeros componentes ya explican ~74%, y con el 3°, ~84%
+
+autoplot(pca_result, 
+         data = co, 
+         colour = "region",      # colores por región
+         label = TRUE,           # mostrar nombre del estado
+         loadings = TRUE,        # mostrar vectores de contaminantes
+         loadings.label = TRUE,  # mostrar nombres de contaminantes
+         loadings.label.size = 3,
+         loadings.colour = "gray40") +
+  scale_color_manual(values = c("Noroeste" = "red",
+                                "Noreste" = "orange",
+                                "Occidente" = "yellow",
+                                "Bajío" = "darkgreen",
+                                "Centro" = "green",
+                                "Sur" = "blue",
+                                "Sureste" = "purple"
+                                )) +
+  theme_minimal() +
+  labs(title = "PCA de emisiones de contaminantes por estado",
+       subtitle = "Color por región geográfica",
+       x = "Componente principal 1",
+       y = "Componente principal 2") +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right")
+
+#Esta gráfica muestra la influencia de los dos primeros componentes principales, y muestra por color a qué región pertenecen
+
+### Se pueden responder las otras preguntas: ¿Cómo se agrupan los estados de México según su perfil de emisiones de distintos contaminantes, y qué contaminantes explican esas diferencias?
+
+### Grupos claros no son visibles, aunque la mayoría está negativamente relacionada a las emisiones de PM 10, PM 2.5, Óxidos de nitrógeno y Monóxido de carbono. Mientras que existen particularidades, pues tanto en los mapas como en la anterior gráfica, hay estados que emiten ciertos contaminantes más que otros: Aguascalientes (1) con el Amoniaco, Campeche(4) y Baja California Sur(3) con el Dióxido de Azufre (SO2), y Baja California (2) con el Monóxido de Carbono.
+
+## Conclusión
+### Sí existen diferencias entre la emisión de contaminantes en México, habiendo estaddos que emiten determinados contamiantes más que otros, y al mismo tiempo, las fuentes de esos contaminantes tambien presentan diferencias en la cantidad que emiten de cada uno de las particulas registradas.
+
+### Para una mejor interpretación del porqué de esta dinámica, se podría añadir, por ejemplo, qué actividad económica se realiza con mayor intensidad en cada estado. Pudiendo ser una mejor explicación que la región en la que se encuentran.
+
+
